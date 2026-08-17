@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Talk Board</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2D6CDF">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Talk Board">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F7F7F2;
+    --surface:#FFFFFF;
+    --ink:#1B2A4A;
+    --muted:#5B6478;
+    --line:#D8DCE3;
+    --accent:#2D6CDF;
+    --accent-ink:#0E2F63;
+    --yes:#1F8A46;
+    --yes-ink:#0D3D1F;
+    --no:#C0392B;
+    --no-ink:#5A1710;
+    --radius:16px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:'Atkinson Hyperlegible', Arial, sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    min-height:100vh;
+    padding:14px;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    user-select:none;
+  }
+  h1{font-size:20px;margin:0;font-weight:700;}
+  .sub{font-size:13px;color:var(--muted);margin-top:2px;}
+  .topbar{margin-bottom:10px;}
+  .panel{
+    background:var(--surface);
+    border:2px solid var(--line);
+    border-radius:var(--radius);
+    padding:14px;
+    margin-bottom:12px;
+  }
+  .sentence{
+    font-size:30px;
+    font-weight:700;
+    min-height:44px;
+    line-height:1.25;
+    word-wrap:break-word;
+  }
+  .wordbuf{
+    font-size:16px;
+    color:var(--accent-ink);
+    background:#EAF1FD;
+    display:inline-block;
+    padding:4px 10px;
+    border-radius:8px;
+    margin-top:8px;
+    min-height:20px;
+    font-weight:700;
+    letter-spacing:1px;
+  }
+  .suggestrow{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;min-height:0;}
+  .suggest-chip{
+    background:#EAF1FD;
+    color:var(--accent-ink);
+    border:2px solid var(--accent);
+    border-radius:999px;
+    padding:8px 16px;
+    font-size:15px;
+    font-weight:700;
+    cursor:pointer;
+    font-family:inherit;
+  }
+  .toolrow{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
+  .tool-btn{
+    flex:1 1 auto;
+    min-width:90px;
+    padding:12px 10px;
+    border-radius:12px;
+    border:2px solid var(--line);
+    background:var(--surface);
+    font-size:15px;
+    font-weight:700;
+    cursor:pointer;
+    font-family:inherit;
+  }
+  .grid-rows{display:flex;flex-direction:column;gap:8px;}
+  .grid-row{display:grid;gap:8px;grid-auto-flow:column;grid-auto-columns:1fr;}
+  .cell{
+    background:var(--surface);
+    border:2px solid var(--line);
+    border-radius:12px;
+    padding:16px 6px;
+    text-align:center;
+    font-size:22px;
+    font-weight:700;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height:64px;
+  }
+  .cell.command{font-size:15px;}
+  .cell.yes{background:#EAF6ED;border-color:var(--yes);color:var(--yes-ink);}
+  .cell.no{background:#FBEBE9;border-color:var(--no);color:var(--no-ink);}
+  .cell.tab.tabactive{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .cell:active{transform:scale(0.96);}
+  @media (max-width:520px){
+    .grid-row{grid-auto-flow:row;grid-template-columns:repeat(3,1fr);}
+    .cell{font-size:19px;padding:14px 4px;min-height:56px;}
+    .sentence{font-size:24px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Talk Board</h1>
+  <div class="sub">Tap a letter, word, or command to build the message.</div>
+</div>
+
+<div class="panel">
+  <div class="sentence" id="sentenceOut">&nbsp;</div>
+  <div class="wordbuf" id="wordOut">&nbsp;</div>
+  <div class="suggestrow" id="suggestRow"></div>
+  <div class="toolrow">
+    <button class="tool-btn" id="speakBtn">🔊 Speak message</button>
+    <button class="tool-btn" id="backspaceBtn">⌫ Backspace</button>
+    <button class="tool-btn" id="clearBtn">Clear all</button>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="grid-rows" id="gridRows"></div>
+</div>
+
+<script>
+const sentenceOut = document.getElementById('sentenceOut');
+const wordOut = document.getElementById('wordOut');
+const suggestRow = document.getElementById('suggestRow');
+const gridRows = document.getElementById('gridRows');
+
+const LOG_ENDPOINT = 'https://script.google.com/macros/s/AKfycbyxCzReNOUKjDUubJ3W3B0cNGTIaYCinCmXV1x9YiUB-UF6WhRgiQBQfx7EgxYpIA9a/exec';
+const LOG_TOKEN = 'OVBIGHO247LOVE';
+
+const LOG_QUEUE_KEY = 'talkboard_logQueue_v1';
+const FREQ_KEY = 'talkboard_freqCache_v1';
+
+function queueRemoteLog(action, value){
+  if(LOG_ENDPOINT.indexOf('PASTE_YOUR') === 0) return;
+  let queue = [];
+  try{ queue = JSON.parse(localStorage.getItem(LOG_QUEUE_KEY) || '[]'); }catch(e){}
+  queue.push({action, value: value || '', token: LOG_TOKEN});
+  try{ localStorage.setItem(LOG_QUEUE_KEY, JSON.stringify(queue)); }catch(e){}
+  flushRemoteLogQueue();
+}
+
+function flushRemoteLogQueue(){
+  let queue = [];
+  try{ queue = JSON.parse(localStorage.getItem(LOG_QUEUE_KEY) || '[]'); }catch(e){}
+  if(!queue.length) return;
+  const remaining = [];
+  let chain = Promise.resolve();
+  queue.forEach((item)=>{
+    chain = chain.then(()=>
+      fetch(LOG_ENDPOINT, { method: 'POST', body: JSON.stringify(item) })
+        .catch(()=>{ remaining.push(item); })
+    );
+  });
+  chain.then(()=>{
+    try{ localStorage.setItem(LOG_QUEUE_KEY, JSON.stringify(remaining)); }catch(e){}
+  });
+}
+
+function syncRemoteFreq(){
+  if(LOG_ENDPOINT.indexOf('PASTE_YOUR') === 0) return;
+  fetch(LOG_ENDPOINT + '?token=' + encodeURIComponent(LOG_TOKEN))
+    .then(r => r.json())
+    .then(data => {
+      if(data && data.words && data.phrases){
+        state.freq = {words: data.words, phrases: data.phrases};
+        saveFreqCache();
+        render();
+        buildGrid();
+      }
+    })
+    .catch(()=>{});
+}
+
+function loadFreqCache(){
+  try{
+    const raw = localStorage.getItem(FREQ_KEY);
+    return raw ? JSON.parse(raw) : {words:{}, phrases:{}};
+  }catch(e){ return {words:{}, phrases:{}}; }
+}
+function saveFreqCache(){
+  try{ localStorage.setItem(FREQ_KEY, JSON.stringify(state.freq)); }catch(e){}
+}
+function recordWord(rawWord){
+  const w = (rawWord||'').trim();
+  if(!w) return;
+  state.freq.words[w] = (state.freq.words[w] || 0) + 1;
+  saveFreqCache();
+  queueRemoteLog('word', w);
+}
+function recordPhrase(p){
+  const val = (p||'').trim();
+  if(!val) return;
+  state.freq.phrases[val] = (state.freq.phrases[val] || 0) + 1;
+  saveFreqCache();
+  queueRemoteLog('phrase', val);
+}
+function topWords(limit, prefix){
+  let entries = Object.keys(state.freq.words).map(w=>({word:w, count:state.freq.words[w]}));
+  if(prefix){ entries = entries.filter(e=>e.word.startsWith(prefix)); }
+  entries.sort((a,b)=> b.count - a.count);
+  return entries.slice(0, limit).map(e=>e.word);
+}
+function topPhrases(limit, prefix){
+  let entries = Object.keys(state.freq.phrases).map(p=>({phrase:p, count:state.freq.phrases[p]}));
+  if(prefix){ entries = entries.filter(e=>e.phrase.startsWith(prefix)); }
+  entries.sort((a,b)=> b.count - a.count);
+  return entries.slice(0, limit).map(e=>e.phrase);
+}
+
+let state = {
+  pad: 'letters',
+  sentence: '',
+  word: '',
+  freq: loadFreqCache()
+};
+
+function speak(text){
+  if(!text) return;
+  try{
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 0.95;
+    window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+
+function render(){
+  sentenceOut.textContent = state.sentence || '\u00A0';
+  wordOut.textContent = state.word ? state.word : '\u00A0';
+
+  suggestRow.innerHTML = '';
+  if(state.word && state.word.trim().length > 0){
+    const prefix = state.word.trim();
+    const wordMatches = topWords(3, prefix).filter(w => w !== prefix);
+    const phraseMatches = topPhrases(2, prefix).filter(p => p !== prefix);
+    const matches = wordMatches.concat(phraseMatches).slice(0, 3);
+    matches.forEach(w=>{
+      const chip = document.createElement('div');
+      chip.className = 'suggest-chip';
+      chip.textContent = w;
+      chip.addEventListener('click', ()=>{
+        state.sentence += w + ' ';
+        state.word = '';
+        recordWord(w);
+        render();
+        buildGrid();
+      });
+      suggestRow.appendChild(chip);
+    });
+  }
+}
+
+function doAction(action){
+  if(!action || action.type === 'none') return;
+  if(action.type === 'letter'){
+    state.word += action.value;
+  } else if(action.type === 'space'){
+    state.word += ' ';
+  } else if(action.type === 'backspace'){
+    state.word = state.word.slice(0,-1);
+  } else if(action.type === 'newword'){
+    if(state.word){ recordWord(state.word); state.sentence += state.word + ' '; state.word=''; }
+  } else if(action.type === 'wordstop'){
+    if(state.word){ recordWord(state.word); state.sentence += state.word + ' '; state.word=''; }
+    speak(state.sentence.trim());
+    queueRemoteLog('speak', state.sentence.trim());
+  } else if(action.type === 'yes'){
+    speak('Yes');
+    queueRemoteLog('yes', '');
+  } else if(action.type === 'no'){
+    speak('No');
+    queueRemoteLog('no', '');
+  } else if(action.type === 'speak'){
+    speak((state.sentence + ' ' + state.word).trim());
+    queueRemoteLog('speak', (state.sentence + ' ' + state.word).trim());
+  } else if(action.type === 'clear'){
+    state.sentence=''; state.word='';
+  } else if(action.type === 'pad'){
+    state.pad = action.value;
+  } else if(action.type === 'phrase'){
+    state.sentence += action.value + ' ';
+    speak(action.value);
+    recordPhrase(action.value);
+  } else if(action.type === 'freqword'){
+    state.sentence += action.value + ' ';
+    recordWord(action.value);
+  }
+  render();
+  buildGrid();
+}
+
+function buildGrid(){
+  const commandRow1 = [
+    {label:'NO', cls:'no', action:{type:'no'}},
+    {label:'YES', cls:'yes', action:{type:'yes'}}
+  ];
+  const commandRow2 = [
+    {label:'NEW WORD', cls:'command', action:{type:'newword'}},
+    {label:'WORD STOP', cls:'command', action:{type:'wordstop'}},
+    {label:'SPEAK', cls:'command', action:{type:'speak'}},
+    {label:'CLEAR', cls:'command', action:{type:'clear'}}
+  ];
+  const tabRow = [
+    {label:'ABC', cls:'tab'+(state.pad==='letters'?' tabactive':''), action:{type:'pad', value:'letters'}},
+    {label:'123', cls:'tab'+(state.pad==='numbers'?' tabactive':''), action:{type:'pad', value:'numbers'}},
+    {label:'PHRASES', cls:'tab'+(state.pad==='phrases'?' tabactive':''), action:{type:'pad', value:'phrases'}},
+    {label:'FREQUENT', cls:'tab'+(state.pad==='frequent'?' tabactive':''), action:{type:'pad', value:'frequent'}}
+  ];
+
+  let padRows = [];
+  if(state.pad === 'letters'){
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+    for(let i=0;i<letters.length;i+=6){
+      padRows.push(letters.slice(i,i+6).map(l=>({label:l, action:{type:'letter', value:l}})));
+    }
+    padRows.push([
+      {label:'SPACE', action:{type:'space'}},
+      {label:'⌫ BACK', action:{type:'backspace'}}
+    ]);
+  } else if(state.pad === 'numbers'){
+    const nums = ['1','2','3','4','5','6','7','8','9','10'];
+    for(let i=0;i<nums.length;i+=5){
+      padRows.push(nums.slice(i,i+5).map(n=>({label:n, action:{type:'letter', value:n}})));
+    }
+    padRows.push([{label:'⌫ BACK', action:{type:'backspace'}}]);
+  } else if(state.pad === 'phrases'){
+    const phrases = ['WATER','BATHROOM','IN PAIN','TIRED','THANK YOU','TURN ME','I LOVE YOU','WAIT'];
+    for(let i=0;i<phrases.length;i+=2){
+      padRows.push(phrases.slice(i,i+2).map(p=>({label:p, action:{type:'phrase', value:p}})));
+    }
+  } else if(state.pad === 'frequent'){
+    const words = topWords(12, null);
+    if(words.length === 0){
+      padRows.push([{label:'No words used yet — this fills in as the board gets used', action:{type:'none'}}]);
+    } else {
+      for(let i=0;i<words.length;i+=2){
+        padRows.push(words.slice(i,i+2).map(w=>({label:w, action:{type:'freqword', value:w}})));
+      }
+    }
+  }
+
+  const rows = [commandRow1, commandRow2, tabRow, ...padRows];
+
+  gridRows.innerHTML = '';
+  rows.forEach((row)=>{
+    const rowEl = document.createElement('div');
+    rowEl.className = 'grid-row';
+    row.forEach((cellDef)=>{
+      const cellEl = document.createElement('div');
+      cellEl.className = 'cell' + (cellDef.cls ? ' '+cellDef.cls : '');
+      cellEl.textContent = cellDef.label;
+      cellEl.addEventListener('click', ()=> doAction(cellDef.action));
+      rowEl.appendChild(cellEl);
+    });
+    gridRows.appendChild(rowEl);
+  });
+}
+
+document.getElementById('speakBtn').addEventListener('click', ()=> doAction({type:'speak'}));
+document.getElementById('backspaceBtn').addEventListener('click', ()=> doAction({type:'backspace'}));
+document.getElementById('clearBtn').addEventListener('click', ()=> doAction({type:'clear'}));
+
+buildGrid();
+render();
+flushRemoteLogQueue();
+syncRemoteFreq();
+setInterval(flushRemoteLogQueue, 30000);
+setInterval(syncRemoteFreq, 60000);
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('service-worker.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
