@@ -153,9 +153,8 @@ const wordOut = document.getElementById('wordOut');
 const suggestRow = document.getElementById('suggestRow');
 const gridRows = document.getElementById('gridRows');
 
-const LOG_ENDPOINT = 'https://script.google.com/macros/s/AKfycbyxCzReNOUKjDUubJ3W3B0cNGTIaYCinCmXV1x9YiUB-UF6WhRgiQBQfx7EgxYpIA9a/exec';
-const LOG_TOKEN = 'OVBIGHO247LOVE';
-
+const LOG_ENDPOINT = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+const LOG_TOKEN = 'CHANGE-THIS-TO-A-PRIVATE-CODE';
 const LOG_QUEUE_KEY = 'talkboard_logQueue_v1';
 const FREQ_KEY = 'talkboard_freqCache_v1';
 
@@ -168,10 +167,14 @@ function queueRemoteLog(action, value){
   flushRemoteLogQueue();
 }
 
+let isFlushingLog = false;
+
 function flushRemoteLogQueue(){
+  if(isFlushingLog) return;
   let queue = [];
   try{ queue = JSON.parse(localStorage.getItem(LOG_QUEUE_KEY) || '[]'); }catch(e){}
   if(!queue.length) return;
+  isFlushingLog = true;
   const remaining = [];
   let chain = Promise.resolve();
   queue.forEach((item)=>{
@@ -182,6 +185,7 @@ function flushRemoteLogQueue(){
   });
   chain.then(()=>{
     try{ localStorage.setItem(LOG_QUEUE_KEY, JSON.stringify(remaining)); }catch(e){}
+    isFlushingLog = false;
   });
 }
 
